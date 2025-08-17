@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::WindowMode};
 use bevy_rapier3d::prelude::*;
 
 const FOLLOW_DIST: f32 = 14.0;
@@ -43,14 +43,22 @@ pub struct PidUI;
 
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PIDState {
-    #[default]
     On,
+    #[default]
     Off,
 }
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Proof of Duel".into(),
+                resizable: true,
+                mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .init_state::<PIDState>()
@@ -112,7 +120,7 @@ pub fn spawn_drone(
             prev_e: 0.0,
             integral_e: 0.0,
             v_limit: 4.0,
-            target_y: 40.0,
+            target_y: 10.0,
         },
     ));
 }
@@ -157,21 +165,18 @@ pub fn pid_altitude_system(
 }
 
 pub fn manual_thrust_input(
-    time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<(&mut Transform, &mut AltVelPid), With<Drone>>,
+    mut drone_query: Query<(&mut Velocity, &mut AltVelPid), With<Drone>>,
     mut next_auto_pilot_state: ResMut<NextState<PIDState>>,
     auto_pilot_state: Res<State<PIDState>>,
 ) {
-    let dt = time.delta_secs();
-
-    for (mut tf, mut ctl) in drone_query.iter_mut() {
+    for (mut vel, mut ctl) in drone_query.iter_mut() {
         if keyboard.pressed(KeyCode::Space) {
-            tf.translation.y += ctl.v_limit * dt;
+            vel.linvel.y = ctl.v_limit;
         }
 
         if keyboard.pressed(KeyCode::ControlLeft) {
-            tf.translation.y -= ctl.v_limit * dt;
+            vel.linvel.y = -ctl.v_limit;
         }
 
         if keyboard.just_pressed(KeyCode::ArrowUp) {
@@ -192,8 +197,9 @@ pub fn manual_thrust_input(
             }
         }
 
-        if keyboard.pressed(KeyCode::Tab) {
-            tf.translation.y = 0.;
+        if keyboard.just_pressed(KeyCode::Escape) {
+            // Exit the application
+            std::process::exit(0);
         }
     }
 }

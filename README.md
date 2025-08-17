@@ -19,6 +19,7 @@ $$
 $$
 \int_{t_0}^{t} v \,dt = \int_{y_0}^{y} dy
 $$
+
 $$
 y(t) = y_0 + vt
 $$
@@ -42,6 +43,9 @@ Where:
 
 You can override the system by pressing:
 
+- `P` → Toggle PID controller on/off
 - `Space` → Increase thrust (go up)
 - `Left Ctrl` → Decrease thrust (go down)
-- `Tab` → Reset drone position to ground level
+- `Arrow Up` → Increase target altitude
+- `Arrow Down` → Decrease target altitude
+- `Esc` → Exit the simulation
