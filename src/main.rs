@@ -355,7 +355,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_children(|parent| {
                     parent.spawn((
                         LimitYText,
-                        Text::new("Limit Y: 30.00 m"),
+                        Text::new("Target Y: 30.00 m"),
                         TextColor(Color::WHITE),
                         TextLayout::new_with_justify(JustifyText::Left),
                         TextFont {
@@ -405,7 +405,7 @@ pub fn update_limit_y_text(
 ) {
     for ctl in drone_query.iter() {
         for mut text in text_query.iter_mut() {
-            *text = format!("Limit Y: {:.2} m", ctl.target_y).into();
+            *text = format!("Target Y: {:.2} m", ctl.target_y).into();
         }
     }
 }
