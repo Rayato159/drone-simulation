@@ -32,11 +32,28 @@ pub struct AltVelPid {
 #[derive(Component)]
 pub struct OutputYText;
 
+#[derive(Component)]
+pub struct LimitYText;
+
+#[derive(Component)]
+pub struct PIDText;
+
+#[derive(Component)]
+pub struct PidUI;
+
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PIDState {
+    #[default]
+    On,
+    Off,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
+        .init_state::<PIDState>()
         .add_systems(Startup, spawn_floor)
         .add_systems(Startup, spawn_drone)
         .add_systems(Startup, spawn_light)
@@ -45,12 +62,14 @@ fn main() {
         .add_systems(
             Update,
             (
-                pid_altitude_system,
                 manual_thrust_input,
+                update_pid_ui,
                 update_output_y_text,
+                update_limit_y_text,
                 update_camera_pos,
             ),
         )
+        .add_systems(Update, pid_altitude_system.run_if(in_state(PIDState::On)))
         .run();
 }
 
@@ -78,32 +97,41 @@ pub fn spawn_drone(
         Drone,
         Mesh3d(meshes.add(Cuboid::new(1.0, 0.5, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        RigidBody::KinematicPositionBased,
+        RigidBody::Dynamic,
         Transform::from_xyz(0.0, 3.0, 0.0),
         Collider::cuboid(1.0 / 2.0, 0.5 / 2.0, 1.0 / 2.0),
+        GravityScale(1.0),
         LockedAxes::ROTATION_LOCKED,
-        GravityScale(0.0),
         AltitudeState::default(),
+        Velocity::zero(),
         AltVelPid {
             kp: 2.0,
-            ki: 0.2,
+            ki: 0.1,
+            kd: 0.5,
             kv: 8.0,
-            kd: 0.2,
             prev_e: 0.0,
             integral_e: 0.0,
             v_limit: 4.0,
-            target_y: 30.0,
+            target_y: 40.0,
         },
     ));
 }
 
 pub fn pid_altitude_system(
     time: Res<Time>,
-    mut drone_query: Query<(&mut Transform, &mut AltVelPid, &mut AltitudeState), With<Drone>>,
+    mut drone_query: Query<
+        (
+            &Transform,
+            &mut Velocity,
+            &mut AltVelPid,
+            &mut AltitudeState,
+        ),
+        With<Drone>,
+    >,
 ) {
     let dt = time.delta_secs().max(1e-4);
 
-    for (mut tf, mut ctl, mut st) in drone_query.iter_mut() {
+    for (tf, mut vel, mut ctl, mut st) in drone_query.iter_mut() {
         // y_0
         let y = tf.translation.y;
 
@@ -122,7 +150,8 @@ pub fn pid_altitude_system(
 
         // Update variables
         st.vy = st.vy * (1.0 - alpha) + v_out * alpha;
-        tf.translation.y += st.vy * dt;
+
+        vel.linvel.y = st.vy;
         ctl.prev_e = e;
     }
 }
@@ -130,17 +159,37 @@ pub fn pid_altitude_system(
 pub fn manual_thrust_input(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<(&mut Transform, &AltVelPid), With<Drone>>,
+    mut drone_query: Query<(&mut Transform, &mut AltVelPid), With<Drone>>,
+    mut next_auto_pilot_state: ResMut<NextState<PIDState>>,
+    auto_pilot_state: Res<State<PIDState>>,
 ) {
     let dt = time.delta_secs();
 
-    for (mut tf, ctl) in drone_query.iter_mut() {
+    for (mut tf, mut ctl) in drone_query.iter_mut() {
         if keyboard.pressed(KeyCode::Space) {
             tf.translation.y += ctl.v_limit * dt;
         }
 
         if keyboard.pressed(KeyCode::ControlLeft) {
             tf.translation.y -= ctl.v_limit * dt;
+        }
+
+        if keyboard.just_pressed(KeyCode::ArrowUp) {
+            ctl.target_y += 1.0;
+            ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
+        }
+
+        if keyboard.just_pressed(KeyCode::ArrowDown) {
+            ctl.target_y -= 1.0;
+            ctl.target_y = ctl.target_y.max(0.0); // Prevent negative target height
+        }
+
+        if keyboard.just_pressed(KeyCode::KeyP) {
+            if *auto_pilot_state.get() == PIDState::On {
+                next_auto_pilot_state.set(PIDState::Off);
+            } else {
+                next_auto_pilot_state.set(PIDState::On);
+            }
         }
 
         if keyboard.pressed(KeyCode::Tab) {
@@ -196,6 +245,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with_children(|parent| {
             parent
                 .spawn((
+                    PidUI,
                     Node {
                         display: Display::Flex,
                         justify_content: JustifyContent::Center,
@@ -216,6 +266,46 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         ..Default::default()
                     },
                     BorderColor(Color::WHITE),
+                    BackgroundColor(Color::srgba(0. / 255., 210. / 255., 0. / 255., 1.)),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        PIDText,
+                        Text::new("PID: On"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 28.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
                 ))
                 .with_children(|parent| {
                     parent.spawn((
@@ -230,7 +320,66 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         },
                     ));
                 });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        LimitYText,
+                        Text::new("Limit Y: 30.00 m"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 28.,
+                            ..Default::default()
+                        },
+                    ));
+                });
         });
+}
+
+pub fn update_pid_ui(
+    auto_pilot_state: Res<State<PIDState>>,
+    mut pid_ui_query: Query<&mut BackgroundColor, With<PidUI>>,
+    mut text_query: Query<&mut Text, With<PIDText>>,
+) {
+    for mut text in text_query.iter_mut() {
+        if *auto_pilot_state.get() == PIDState::On {
+            *text = "PID: On".into();
+            for mut ui in pid_ui_query.iter_mut() {
+                *ui = BackgroundColor(Color::srgba(0. / 255., 210. / 255., 0. / 255., 1.));
+            }
+        } else {
+            *text = "PID: Off".into();
+            for mut ui in pid_ui_query.iter_mut() {
+                *ui = BackgroundColor(Color::srgba(210. / 255., 0. / 255., 0. / 255., 1.));
+            }
+        }
+    }
 }
 
 pub fn update_output_y_text(
@@ -240,6 +389,17 @@ pub fn update_output_y_text(
     for tf in drone_query.iter() {
         for mut text in text_query.iter_mut() {
             *text = format!("Output Y: {:.2} m", tf.translation.y).into();
+        }
+    }
+}
+
+pub fn update_limit_y_text(
+    drone_query: Query<&AltVelPid, With<Drone>>,
+    mut text_query: Query<&mut Text, With<LimitYText>>,
+) {
+    for ctl in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            *text = format!("Limit Y: {:.2} m", ctl.target_y).into();
         }
     }
 }
