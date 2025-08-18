@@ -77,7 +77,7 @@ fn main() {
                 update_camera_pos,
             ),
         )
-        .add_systems(Update, pid_altitude_system.run_if(in_state(PIDState::On)))
+        .add_systems(Update, hover.run_if(in_state(PIDState::On)))
         .run();
 }
 
@@ -124,7 +124,7 @@ pub fn spawn_drone(
     ));
 }
 
-pub fn pid_altitude_system(
+pub fn hover(
     time: Res<Time>,
     mut drone_query: Query<
         (
