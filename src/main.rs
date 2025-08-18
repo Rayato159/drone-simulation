@@ -161,8 +161,8 @@ pub fn hover(
 pub fn manual_thrust_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut drone_query: Query<&mut HoverPid, With<Drone>>,
-    mut next_auto_pilot_state: ResMut<NextState<HoverState>>,
-    auto_pilot_state: Res<State<HoverState>>,
+    mut next_hover_state: ResMut<NextState<HoverState>>,
+    hover_state: Res<State<HoverState>>,
     mut delay: ResMut<Delay>,
     time: Res<Time>,
 ) {
@@ -171,7 +171,7 @@ pub fn manual_thrust_input(
             delay.timer.tick(time.delta());
 
             if delay.timer.just_finished() {
-                if *auto_pilot_state.get() == HoverState::On {
+                if *hover_state.get() == HoverState::On {
                     ctl.target_y += 1.0;
                     ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
                 }
@@ -182,18 +182,22 @@ pub fn manual_thrust_input(
             delay.timer.tick(time.delta());
 
             if delay.timer.just_finished() {
-                if *auto_pilot_state.get() == HoverState::On {
+                if *hover_state.get() == HoverState::On {
                     ctl.target_y -= 1.0;
-                    ctl.target_y = ctl.target_y.max(0.0); // Prevent going below ground level
+                    ctl.target_y = ctl.target_y.max(10.0); // Prevent going below ground level
                 }
             }
         }
 
         if keyboard.just_pressed(KeyCode::KeyP) {
-            if *auto_pilot_state.get() == HoverState::On {
-                next_auto_pilot_state.set(HoverState::Off);
+            if *hover_state.get() == HoverState::On {
+                next_hover_state.set(HoverState::Off);
+
+                ctl.target_y = 0.0;
             } else {
-                next_auto_pilot_state.set(HoverState::On);
+                next_hover_state.set(HoverState::On);
+
+                ctl.target_y = 10.0; // Default target height when engine is on
             }
         }
 
@@ -369,12 +373,12 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 pub fn update_engine_ui(
-    auto_pilot_state: Res<State<HoverState>>,
+    hover_state: Res<State<HoverState>>,
     mut engine_ui_query: Query<&mut BackgroundColor, With<EngineUI>>,
     mut text_query: Query<&mut Text, With<HoverModeText>>,
 ) {
     for mut text in text_query.iter_mut() {
-        if *auto_pilot_state.get() == HoverState::On {
+        if *hover_state.get() == HoverState::On {
             *text = "Engine: On".into();
             for mut ui in engine_ui_query.iter_mut() {
                 *ui = BackgroundColor(Color::srgba(0. / 255., 210. / 255., 0. / 255., 1.));
