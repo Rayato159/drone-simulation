@@ -154,7 +154,6 @@ pub fn hover(
 
         // Update variables
         st.vy = st.vy + v_out * SAFETY_FACTOR;
-
         vel.linvel.y = st.vy;
         ctl.prev_e = e;
     }
