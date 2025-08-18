@@ -17,7 +17,7 @@ $$
 **So,**
 
 $$
-\int_{t_0}^{t} v \,dt = \int_{y_0}^{y} dy
+\int_{t_0}^{t} v dt = \int_{y_0}^{y} dy
 $$
 
 $$
@@ -27,17 +27,17 @@ $$
 ## 🎯 PID Controller:
 
 $$
-\text{output}(t) = K_p \cdot e(t) + K_i \cdot \int e(t) \,dt + K_d \cdot \frac{de(t)}{dt}
+\text{output}(t) = K_p \cdot e(t) + K_i \cdot \int e(t) dt + K_d \cdot \frac{de(t)}{dt}
 $$
 
 Where:
 
-| Symbol     | Meaning                           |
-| ---------- | --------------------------------- |
-| \( e(t) \) | Error = Target - Current Altitude |
-| \( K_p \)  | Proportional gain                 |
-| \( K_i \)  | Integral gain                     |
-| \( K_d \)  | Derivative gain                   |
+| Symbol | Meaning                           |
+| ------ | --------------------------------- |
+| e(t)   | Error = Target - Current Altitude |
+| K_p    | Proportional gain                 |
+| K_i    | Integral gain                     |
+| K_d    | Derivative gain                   |
 
 ## 🎮 Manual Control
 

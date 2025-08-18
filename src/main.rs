@@ -36,7 +36,7 @@ pub struct OutputYText;
 pub struct LimitYText;
 
 #[derive(Component)]
-pub struct PIDText;
+pub struct HoverModeText;
 
 #[derive(Component)]
 pub struct PidUI;
@@ -276,8 +276,8 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ))
                 .with_children(|parent| {
                     parent.spawn((
-                        PIDText,
-                        Text::new("PID: On"),
+                        HoverModeText,
+                        Text::new("Hover Mode: On"),
                         TextColor(Color::WHITE),
                         TextLayout::new_with_justify(JustifyText::Left),
                         TextFont {
@@ -371,16 +371,16 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 pub fn update_pid_ui(
     auto_pilot_state: Res<State<PIDState>>,
     mut pid_ui_query: Query<&mut BackgroundColor, With<PidUI>>,
-    mut text_query: Query<&mut Text, With<PIDText>>,
+    mut text_query: Query<&mut Text, With<HoverModeText>>,
 ) {
     for mut text in text_query.iter_mut() {
         if *auto_pilot_state.get() == PIDState::On {
-            *text = "PID: On".into();
+            *text = "Hover Mode: On".into();
             for mut ui in pid_ui_query.iter_mut() {
                 *ui = BackgroundColor(Color::srgba(0. / 255., 210. / 255., 0. / 255., 1.));
             }
         } else {
-            *text = "PID: Off".into();
+            *text = "Hover Mode: Off".into();
             for mut ui in pid_ui_query.iter_mut() {
                 *ui = BackgroundColor(Color::srgba(210. / 255., 0. / 255., 0. / 255., 1.));
             }
