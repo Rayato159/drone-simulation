@@ -5,7 +5,7 @@ const FOLLOW_DIST: f32 = 14.0;
 const FOLLOW_HEIGHT: f32 = 6.0;
 const LOOK_AHEAD: f32 = 8.0;
 const SMOOTHNESS: f32 = 6.0;
-const SAFETY_FACTOR: f32 = 0.01;
+const SAFETY_FACTOR: f32 = 0.8;
 
 #[derive(Component)]
 pub struct Drone;
@@ -113,13 +113,13 @@ pub fn spawn_drone(
         AltitudeState::default(),
         Velocity::zero(),
         AltVelPid {
-            kp: 2.0,
-            ki: 0.2,
-            kd: 4.5,
+            kp: 0.6,
+            ki: 0.23,
+            kd: 1.09,
             prev_e: 0.0,
             integral_e: 0.0,
-            v_limit: 4.0,
-            target_y: 80.0,
+            v_limit: 6.0,
+            target_y: 20.0,
         },
     ));
 }
