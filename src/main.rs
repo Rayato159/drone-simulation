@@ -34,10 +34,10 @@ pub struct LimitYText;
 pub struct HoverModeText;
 
 #[derive(Component)]
-pub struct PidUI;
+pub struct EngineUI;
 
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PIDState {
+pub enum HoverState {
     On,
     #[default]
     Off,
@@ -60,7 +60,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "PID Sim".into(),
+                title: "Drone Sim".into(),
                 resizable: true,
                 mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                 ..Default::default()
@@ -70,7 +70,7 @@ fn main() {
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .insert_resource(Delay::new(0.05))
-        .init_state::<PIDState>()
+        .init_state::<HoverState>()
         .add_systems(Startup, spawn_floor)
         .add_systems(Startup, spawn_drone)
         .add_systems(Startup, spawn_light)
@@ -80,13 +80,13 @@ fn main() {
             Update,
             (
                 manual_thrust_input,
-                update_pid_ui,
+                update_engine_ui,
                 update_output_y_text,
-                update_limit_y_text,
+                update_target_y_text,
                 update_camera_pos,
             ),
         )
-        .add_systems(Update, hover.run_if(in_state(PIDState::On)))
+        .add_systems(Update, hover.run_if(in_state(HoverState::On)))
         .run();
 }
 
@@ -160,22 +160,20 @@ pub fn hover(
 
 pub fn manual_thrust_input(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<(&mut Velocity, &mut HoverPid), With<Drone>>,
-    mut next_auto_pilot_state: ResMut<NextState<PIDState>>,
-    auto_pilot_state: Res<State<PIDState>>,
+    mut drone_query: Query<&mut HoverPid, With<Drone>>,
+    mut next_auto_pilot_state: ResMut<NextState<HoverState>>,
+    auto_pilot_state: Res<State<HoverState>>,
     mut delay: ResMut<Delay>,
     time: Res<Time>,
 ) {
-    for (mut vel, mut ctl) in drone_query.iter_mut() {
+    for mut ctl in drone_query.iter_mut() {
         if keyboard.pressed(KeyCode::Space) {
             delay.timer.tick(time.delta());
 
             if delay.timer.just_finished() {
-                if *auto_pilot_state.get() == PIDState::On {
+                if *auto_pilot_state.get() == HoverState::On {
                     ctl.target_y += 1.0;
                     ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
-                } else {
-                    vel.linvel.y = ctl.v_limit;
                 }
             }
         }
@@ -184,20 +182,18 @@ pub fn manual_thrust_input(
             delay.timer.tick(time.delta());
 
             if delay.timer.just_finished() {
-                if *auto_pilot_state.get() == PIDState::On {
+                if *auto_pilot_state.get() == HoverState::On {
                     ctl.target_y -= 1.0;
                     ctl.target_y = ctl.target_y.max(0.0); // Prevent going below ground level
-                } else {
-                    vel.linvel.y = -ctl.v_limit;
                 }
             }
         }
 
         if keyboard.just_pressed(KeyCode::KeyP) {
-            if *auto_pilot_state.get() == PIDState::On {
-                next_auto_pilot_state.set(PIDState::Off);
+            if *auto_pilot_state.get() == HoverState::On {
+                next_auto_pilot_state.set(HoverState::Off);
             } else {
-                next_auto_pilot_state.set(PIDState::On);
+                next_auto_pilot_state.set(HoverState::On);
             }
         }
 
@@ -255,7 +251,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with_children(|parent| {
             parent
                 .spawn((
-                    PidUI,
+                    EngineUI,
                     Node {
                         display: Display::Flex,
                         justify_content: JustifyContent::Center,
@@ -281,7 +277,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_children(|parent| {
                     parent.spawn((
                         HoverModeText,
-                        Text::new("Hover Mode: On"),
+                        Text::new("Engine: On"),
                         TextColor(Color::WHITE),
                         TextLayout::new_with_justify(JustifyText::Left),
                         TextFont {
@@ -372,20 +368,20 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
 }
 
-pub fn update_pid_ui(
-    auto_pilot_state: Res<State<PIDState>>,
-    mut pid_ui_query: Query<&mut BackgroundColor, With<PidUI>>,
+pub fn update_engine_ui(
+    auto_pilot_state: Res<State<HoverState>>,
+    mut engine_ui_query: Query<&mut BackgroundColor, With<EngineUI>>,
     mut text_query: Query<&mut Text, With<HoverModeText>>,
 ) {
     for mut text in text_query.iter_mut() {
-        if *auto_pilot_state.get() == PIDState::On {
-            *text = "Hover Mode: On".into();
-            for mut ui in pid_ui_query.iter_mut() {
+        if *auto_pilot_state.get() == HoverState::On {
+            *text = "Engine: On".into();
+            for mut ui in engine_ui_query.iter_mut() {
                 *ui = BackgroundColor(Color::srgba(0. / 255., 210. / 255., 0. / 255., 1.));
             }
         } else {
-            *text = "Hover Mode: Off".into();
-            for mut ui in pid_ui_query.iter_mut() {
+            *text = "Engine: Off".into();
+            for mut ui in engine_ui_query.iter_mut() {
                 *ui = BackgroundColor(Color::srgba(210. / 255., 0. / 255., 0. / 255., 1.));
             }
         }
@@ -403,7 +399,7 @@ pub fn update_output_y_text(
     }
 }
 
-pub fn update_limit_y_text(
+pub fn update_target_y_text(
     drone_query: Query<&HoverPid, With<Drone>>,
     mut text_query: Query<&mut Text, With<LimitYText>>,
 ) {

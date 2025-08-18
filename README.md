@@ -51,9 +51,7 @@ Where:
 
 You can override the system by pressing:
 
-- `P` → Toggle PID controller on/off
-- `Space` → Increase thrust (go up)
-- `Left Ctrl` → Decrease thrust (go down)
-- `Arrow Up` → Increase target altitude
-- `Arrow Down` → Decrease target altitude
+- `P` → Toggle Start Engine on/off
+- `Space` → Increase Altitude (go up)
+- `Left Ctrl` → Decrease Altitude (go down)
 - `Esc` → Exit the simulation
