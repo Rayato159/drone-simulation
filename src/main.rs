@@ -5,6 +5,7 @@ const FOLLOW_DIST: f32 = 14.0;
 const FOLLOW_HEIGHT: f32 = 6.0;
 const LOOK_AHEAD: f32 = 8.0;
 const SMOOTHNESS: f32 = 6.0;
+const SAFETY_FACTOR: f32 = 0.01;
 
 #[derive(Component)]
 pub struct Drone;
@@ -21,7 +22,6 @@ pub struct AltitudeState {
 pub struct AltVelPid {
     pub kp: f32,
     pub ki: f32,
-    pub kv: f32,
     pub kd: f32,
     pub prev_e: f32,
     pub integral_e: f32,
@@ -114,13 +114,12 @@ pub fn spawn_drone(
         Velocity::zero(),
         AltVelPid {
             kp: 2.0,
-            ki: 0.1,
-            kd: 0.5,
-            kv: 8.0,
+            ki: 0.2,
+            kd: 4.5,
             prev_e: 0.0,
             integral_e: 0.0,
             v_limit: 4.0,
-            target_y: 10.0,
+            target_y: 80.0,
         },
     ));
 }
@@ -137,7 +136,7 @@ pub fn pid_altitude_system(
         With<Drone>,
     >,
 ) {
-    let dt = time.delta_secs().max(1e-4);
+    let dt = time.delta_secs();
 
     for (tf, mut vel, mut ctl, mut st) in drone_query.iter_mut() {
         // y_0
@@ -153,11 +152,8 @@ pub fn pid_altitude_system(
         let mut v_out = (ctl.kp * e) + (ctl.ki * ctl.integral_e) + (ctl.kd * (e - ctl.prev_e) / dt);
         v_out = v_out.clamp(-ctl.v_limit, ctl.v_limit);
 
-        // Prevent overshoot
-        let alpha = 1.0 - (-ctl.kv * dt).exp();
-
         // Update variables
-        st.vy = st.vy * (1.0 - alpha) + v_out * alpha;
+        st.vy = st.vy + v_out * SAFETY_FACTOR;
 
         vel.linvel.y = st.vy;
         ctl.prev_e = e;

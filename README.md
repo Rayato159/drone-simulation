@@ -39,6 +39,14 @@ Where:
 | K_i    | Integral gain                     |
 | K_d    | Derivative gain                   |
 
+## 🎲 Ziegler–Nichols Method
+
+| Control Type | K_p     | K_i           | K_d          |
+| ------------ | ------- | ------------- | ------------ |
+| **P**        | 0.50K_u | —             | —            |
+| **PI**       | 0.45K_u | 0.54K_u / T_u | —            |
+| **PID**      | 0.60K_u | 1.2K_u / T_u  | 3K_uT_u / 40 |
+
 ## 🎮 Manual Control
 
 You can override the system by pressing:
