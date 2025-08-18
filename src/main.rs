@@ -13,13 +13,8 @@ pub struct Drone;
 #[derive(Component)]
 pub struct DroneCamera;
 
-#[derive(Component, Default)]
-pub struct AltitudeState {
-    pub vy: f32,
-}
-
 #[derive(Component)]
-pub struct AltVelPid {
+pub struct HoverPid {
     pub kp: f32,
     pub ki: f32,
     pub kd: f32,
@@ -48,6 +43,19 @@ pub enum PIDState {
     Off,
 }
 
+#[derive(Resource)]
+pub struct Delay {
+    pub timer: Timer,
+}
+
+impl Delay {
+    pub fn new(duration: f32) -> Self {
+        Self {
+            timer: Timer::from_seconds(duration, TimerMode::Repeating),
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -61,6 +69,7 @@ fn main() {
         }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
+        .insert_resource(Delay::new(0.05))
         .init_state::<PIDState>()
         .add_systems(Startup, spawn_floor)
         .add_systems(Startup, spawn_drone)
@@ -110,35 +119,26 @@ pub fn spawn_drone(
         Collider::cuboid(1.0 / 2.0, 0.5 / 2.0, 1.0 / 2.0),
         GravityScale(1.0),
         LockedAxes::ROTATION_LOCKED,
-        AltitudeState::default(),
         Velocity::zero(),
-        AltVelPid {
+        HoverPid {
             kp: 0.6,
             ki: 0.23,
             kd: 1.09,
             prev_e: 0.0,
             integral_e: 0.0,
             v_limit: 6.0,
-            target_y: 20.0,
+            target_y: 0.0,
         },
     ));
 }
 
 pub fn hover(
     time: Res<Time>,
-    mut drone_query: Query<
-        (
-            &Transform,
-            &mut Velocity,
-            &mut AltVelPid,
-            &mut AltitudeState,
-        ),
-        With<Drone>,
-    >,
+    mut drone_query: Query<(&Transform, &mut Velocity, &mut HoverPid), With<Drone>>,
 ) {
     let dt = time.delta_secs();
 
-    for (tf, mut vel, mut ctl, mut st) in drone_query.iter_mut() {
+    for (tf, mut vel, mut ctl) in drone_query.iter_mut() {
         // y_0
         let y = tf.translation.y;
 
@@ -153,35 +153,44 @@ pub fn hover(
         v_out = v_out.clamp(-ctl.v_limit, ctl.v_limit);
 
         // Update variables
-        st.vy = st.vy + v_out * SAFETY_FACTOR;
-        vel.linvel.y = st.vy;
+        vel.linvel.y = vel.linvel.y + v_out * SAFETY_FACTOR;
         ctl.prev_e = e;
     }
 }
 
 pub fn manual_thrust_input(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<(&mut Velocity, &mut AltVelPid), With<Drone>>,
+    mut drone_query: Query<(&mut Velocity, &mut HoverPid), With<Drone>>,
     mut next_auto_pilot_state: ResMut<NextState<PIDState>>,
     auto_pilot_state: Res<State<PIDState>>,
+    mut delay: ResMut<Delay>,
+    time: Res<Time>,
 ) {
     for (mut vel, mut ctl) in drone_query.iter_mut() {
         if keyboard.pressed(KeyCode::Space) {
-            vel.linvel.y = ctl.v_limit;
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *auto_pilot_state.get() == PIDState::On {
+                    ctl.target_y += 1.0;
+                    ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
+                } else {
+                    vel.linvel.y = ctl.v_limit;
+                }
+            }
         }
 
         if keyboard.pressed(KeyCode::ControlLeft) {
-            vel.linvel.y = -ctl.v_limit;
-        }
+            delay.timer.tick(time.delta());
 
-        if keyboard.just_pressed(KeyCode::ArrowUp) {
-            ctl.target_y += 1.0;
-            ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
-        }
-
-        if keyboard.just_pressed(KeyCode::ArrowDown) {
-            ctl.target_y -= 1.0;
-            ctl.target_y = ctl.target_y.max(0.0); // Prevent negative target height
+            if delay.timer.just_finished() {
+                if *auto_pilot_state.get() == PIDState::On {
+                    ctl.target_y -= 1.0;
+                    ctl.target_y = ctl.target_y.max(0.0); // Prevent going below ground level
+                } else {
+                    vel.linvel.y = -ctl.v_limit;
+                }
+            }
         }
 
         if keyboard.just_pressed(KeyCode::KeyP) {
@@ -395,7 +404,7 @@ pub fn update_output_y_text(
 }
 
 pub fn update_limit_y_text(
-    drone_query: Query<&AltVelPid, With<Drone>>,
+    drone_query: Query<&HoverPid, With<Drone>>,
     mut text_query: Query<&mut Text, With<LimitYText>>,
 ) {
     for ctl in drone_query.iter() {
