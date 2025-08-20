@@ -54,4 +54,8 @@ You can override the system by pressing:
 - `P` → Toggle Start Engine on/off
 - `Space` → Increase Altitude (go up)
 - `Left Ctrl` → Decrease Altitude (go down)
+- `W` → Move Forward
+- `S` → Move Backward
+- `A` → Move Left
+- `D` → Move Right
 - `Esc` → Exit the simulation
