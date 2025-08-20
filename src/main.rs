@@ -5,6 +5,7 @@ const FOLLOW_DIST: f32 = 14.0;
 const FOLLOW_HEIGHT: f32 = 6.0;
 const LOOK_AHEAD: f32 = 8.0;
 const SMOOTHNESS: f32 = 6.0;
+const GRAVITY: f32 = 9.81;
 
 #[derive(Component)]
 pub struct Drone;
@@ -28,51 +29,13 @@ pub struct HoverPid {
 }
 
 #[derive(Component)]
-pub struct CruiseZPid {
-    pub kp: f32,
-    pub ki: f32,
-    pub kd: f32,
-    pub prev_e: f32,
-    pub integral_e: f32,
-    pub a_limit: f32,
-    pub target_v: f32,
-    pub max_v: f32,
-    pub min_v: f32,
-}
-
-#[derive(Component)]
-pub struct CruiseXPid {
-    pub kp: f32,
-    pub ki: f32,
-    pub kd: f32,
-    pub prev_e: f32,
-    pub integral_e: f32,
-    pub a_limit: f32,
-    pub target_v: f32,
-    pub max_v: f32,
-    pub min_v: f32,
-}
-
-#[derive(Component)]
 pub struct OutputYText;
 
 #[derive(Component)]
 pub struct TargetYText;
 
 #[derive(Component)]
-pub struct OutputZText;
-
-#[derive(Component)]
-pub struct TargetZText;
-
-#[derive(Component)]
-pub struct OutputXText;
-
-#[derive(Component)]
-pub struct TargetXText;
-
-#[derive(Component)]
-pub struct HoverModeText;
+pub struct EngineText;
 
 #[derive(Component)]
 pub struct EngineUI;
@@ -88,9 +51,6 @@ pub enum EngineState {
 pub struct Delay {
     pub timer: Timer,
 }
-
-#[derive(Resource)]
-pub struct Dir(pub Vec3);
 
 impl Delay {
     pub fn new(duration: f32) -> Self {
@@ -114,7 +74,6 @@ fn main() {
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .insert_resource(Delay::new(0.05))
-        .insert_resource(Dir(Vec3::ZERO))
         .init_state::<EngineState>()
         .add_systems(Startup, spawn_floor)
         .add_systems(Startup, spawn_drone)
@@ -125,21 +84,13 @@ fn main() {
             Update,
             (
                 manual_control,
-                update_movement,
                 update_engine_ui,
                 update_output_y_text,
                 update_target_y_text,
-                update_output_z_text,
-                update_target_z_text,
-                update_output_x_text,
-                update_target_x_text,
                 update_camera_pos,
             ),
         )
-        .add_systems(
-            Update,
-            (hover, cruise_z, cruise_x).run_if(in_state(EngineState::On)),
-        )
+        .add_systems(Update, hover.run_if(in_state(EngineState::On)))
         .run();
 }
 
@@ -190,28 +141,6 @@ pub fn spawn_drone(
             target_y: 0.0,
             min_y: 0.0,
             max_y: 120.0,
-        })
-        .insert(CruiseZPid {
-            kp: 3.0,
-            ki: 0.2,
-            kd: 1.0,
-            prev_e: 0.0,
-            integral_e: 0.0,
-            a_limit: 9.0,
-            target_v: 0.0,
-            max_v: 18.0,
-            min_v: -18.0,
-        })
-        .insert(CruiseXPid {
-            kp: 3.0,
-            ki: 0.2,
-            kd: 1.0,
-            prev_e: 0.0,
-            integral_e: 0.0,
-            a_limit: 9.0,
-            target_v: 0.0,
-            max_v: 18.0,
-            min_v: -18.0,
         });
 }
 
@@ -242,81 +171,26 @@ pub fn hover(
 
         let a_out =
             (ctl_y.kp * e) + (ctl_y.ki * ctl_y.integral_e) + (ctl_y.kd * (e - ctl_y.prev_e) / dt);
+
+        // Update error
         ctl_y.prev_e = e;
 
         // Total desired vertical acceleration
-        let total_a = a_out + 9.81;
-
-        let force_y = m.mass * total_a;
+        let force_y = m.mass * (a_out + GRAVITY);
 
         force.force = Vec3::new(0.0, force_y, 0.0);
     }
 }
 
-pub fn cruise_z(
-    time: Res<Time>,
-    mut drone_query: Query<(&mut Velocity, &mut CruiseZPid), With<Drone>>,
-) {
-    let dt = time.delta_secs();
-
-    for (mut vel, mut ctl_z) in drone_query.iter_mut() {
-        // z_0
-        let v = vel.linvel.z;
-
-        // Error
-        let e = ctl_z.target_v - v;
-
-        // Integral error
-        ctl_z.integral_e += e * dt;
-
-        // PID fully computed
-        let mut a_out =
-            (ctl_z.kp * e) + (ctl_z.ki * ctl_z.integral_e) + (ctl_z.kd * (e - ctl_z.prev_e) / dt);
-        a_out = a_out.clamp(-ctl_z.a_limit, ctl_z.a_limit);
-
-        // Update variables
-        vel.linvel.z = vel.linvel.z + a_out * dt;
-        ctl_z.prev_e = e;
-    }
-}
-
-pub fn cruise_x(
-    time: Res<Time>,
-    mut drone_query: Query<(&mut Velocity, &mut CruiseXPid), With<Drone>>,
-) {
-    let dt = time.delta_secs();
-
-    for (mut vel, mut ctl_x) in drone_query.iter_mut() {
-        // z_0
-        let v = vel.linvel.x;
-
-        // Error
-        let e = ctl_x.target_v - v;
-
-        // Integral error
-        ctl_x.integral_e += e * dt;
-
-        // PID fully computed
-        let mut a_out =
-            (ctl_x.kp * e) + (ctl_x.ki * ctl_x.integral_e) + (ctl_x.kd * (e - ctl_x.prev_e) / dt);
-        a_out = a_out.clamp(-ctl_x.a_limit, ctl_x.a_limit);
-
-        // Update variables
-        vel.linvel.x = vel.linvel.x + a_out * dt;
-        ctl_x.prev_e = e;
-    }
-}
-
 pub fn manual_control(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<(&mut HoverPid, &mut CruiseZPid, &mut CruiseXPid), With<Drone>>,
+    mut drone_query: Query<&mut HoverPid, With<Drone>>,
     mut next_engine_state: ResMut<NextState<EngineState>>,
     engine_state: Res<State<EngineState>>,
     mut delay: ResMut<Delay>,
     time: Res<Time>,
-    mut dir: ResMut<Dir>,
 ) {
-    for (mut ctl_y, mut ctl_z, mut ctl_x) in drone_query.iter_mut() {
+    for mut ctl_y in drone_query.iter_mut() {
         if keyboard.pressed(KeyCode::Space) {
             delay.timer.tick(time.delta());
 
@@ -339,61 +213,11 @@ pub fn manual_control(
             }
         }
 
-        if keyboard.pressed(KeyCode::KeyW) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    dir.0 = Vec3::new(0.0, 0.0, -1.0);
-                }
-            }
-        } else if keyboard.just_released(KeyCode::KeyW) {
-            dir.0 = Vec3::ZERO;
-        }
-
-        if keyboard.pressed(KeyCode::KeyS) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    dir.0 = Vec3::new(0.0, 0.0, 1.0);
-                }
-            }
-        } else if keyboard.just_released(KeyCode::KeyS) {
-            dir.0 = Vec3::ZERO;
-        }
-
-        if keyboard.pressed(KeyCode::KeyA) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    dir.0 = Vec3::new(-1.0, 0.0, 0.0);
-                }
-            }
-        } else if keyboard.just_released(KeyCode::KeyA) {
-            dir.0 = Vec3::ZERO;
-        }
-
-        if keyboard.pressed(KeyCode::KeyD) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    dir.0 = Vec3::new(1.0, 0.0, 0.0);
-                }
-            }
-        } else if keyboard.just_released(KeyCode::KeyD) {
-            dir.0 = Vec3::ZERO;
-        }
-
         if keyboard.just_pressed(KeyCode::KeyP) {
             if *engine_state.get() == EngineState::On {
                 next_engine_state.set(EngineState::Off);
 
                 ctl_y.target_y = 0.0;
-                ctl_z.target_v = 0.0;
-                ctl_x.target_v = 0.0;
             } else {
                 next_engine_state.set(EngineState::On);
 
@@ -404,28 +228,6 @@ pub fn manual_control(
         if keyboard.just_pressed(KeyCode::Escape) {
             // Exit the application
             std::process::exit(0);
-        }
-    }
-}
-
-pub fn update_movement(
-    mut drone_query: Query<(&mut CruiseZPid, &mut CruiseXPid), With<Drone>>,
-    dir: Res<Dir>,
-) {
-    if dir.0.length_squared() > 0.0 {
-        for (mut ctl_z, mut ctl_x) in drone_query.iter_mut() {
-            let norm_dir = dir.0.normalize();
-
-            ctl_z.target_v += norm_dir.z;
-            ctl_z.target_v = ctl_z.target_v.clamp(ctl_z.min_v, ctl_z.max_v);
-
-            ctl_x.target_v += norm_dir.x;
-            ctl_x.target_v = ctl_x.target_v.clamp(ctl_x.min_v, ctl_x.max_v);
-        }
-    } else {
-        for (mut ctl_z, mut ctl_x) in drone_query.iter_mut() {
-            ctl_z.target_v = 0.0;
-            ctl_x.target_v = 0.0;
         }
     }
 }
@@ -502,7 +304,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ))
                 .with_children(|parent| {
                     parent.spawn((
-                        HoverModeText,
+                        EngineText,
                         Text::new("Engine: On"),
                         TextColor(Color::WHITE),
                         TextLayout::new_with_justify(JustifyText::Left),
@@ -593,173 +395,13 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         },
                     ));
                 });
-        })
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(320.),
-                        display: Display::Flex,
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        position_type: PositionType::Relative,
-                        padding: UiRect {
-                            left: Val::Px(8.),
-                            right: Val::Px(8.),
-                            top: Val::Px(8.),
-                            bottom: Val::Px(8.),
-                        },
-                        border: UiRect {
-                            left: Val::Px(2.),
-                            right: Val::Px(2.),
-                            top: Val::Px(2.),
-                            bottom: Val::Px(2.),
-                        },
-                        ..Default::default()
-                    },
-                    BorderColor(Color::WHITE),
-                    BackgroundColor(Color::BLACK),
-                ))
-                .with_children(|parent| {
-                    parent.spawn((
-                        OutputZText,
-                        Text::new("Output Z: 0.00 m/s"),
-                        TextColor(Color::WHITE),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 22.,
-                            ..Default::default()
-                        },
-                    ));
-                });
-        })
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(320.),
-                        display: Display::Flex,
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        position_type: PositionType::Relative,
-                        padding: UiRect {
-                            left: Val::Px(8.),
-                            right: Val::Px(8.),
-                            top: Val::Px(8.),
-                            bottom: Val::Px(8.),
-                        },
-                        border: UiRect {
-                            left: Val::Px(2.),
-                            right: Val::Px(2.),
-                            top: Val::Px(2.),
-                            bottom: Val::Px(2.),
-                        },
-                        ..Default::default()
-                    },
-                    BorderColor(Color::WHITE),
-                    BackgroundColor(Color::BLACK),
-                ))
-                .with_children(|parent| {
-                    parent.spawn((
-                        TargetZText,
-                        Text::new("Target Z: 0.00 m/s"),
-                        TextColor(Color::WHITE),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 22.,
-                            ..Default::default()
-                        },
-                    ));
-                });
-        })
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(320.),
-                        display: Display::Flex,
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        position_type: PositionType::Relative,
-                        padding: UiRect {
-                            left: Val::Px(8.),
-                            right: Val::Px(8.),
-                            top: Val::Px(8.),
-                            bottom: Val::Px(8.),
-                        },
-                        border: UiRect {
-                            left: Val::Px(2.),
-                            right: Val::Px(2.),
-                            top: Val::Px(2.),
-                            bottom: Val::Px(2.),
-                        },
-                        ..Default::default()
-                    },
-                    BorderColor(Color::WHITE),
-                    BackgroundColor(Color::BLACK),
-                ))
-                .with_children(|parent| {
-                    parent.spawn((
-                        OutputXText,
-                        Text::new("Output X: 0.00 m/s"),
-                        TextColor(Color::WHITE),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 22.,
-                            ..Default::default()
-                        },
-                    ));
-                });
-        })
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(320.),
-                        display: Display::Flex,
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        position_type: PositionType::Relative,
-                        padding: UiRect {
-                            left: Val::Px(8.),
-                            right: Val::Px(8.),
-                            top: Val::Px(8.),
-                            bottom: Val::Px(8.),
-                        },
-                        border: UiRect {
-                            left: Val::Px(2.),
-                            right: Val::Px(2.),
-                            top: Val::Px(2.),
-                            bottom: Val::Px(2.),
-                        },
-                        ..Default::default()
-                    },
-                    BorderColor(Color::WHITE),
-                    BackgroundColor(Color::BLACK),
-                ))
-                .with_children(|parent| {
-                    parent.spawn((
-                        TargetXText,
-                        Text::new("Target X: 0.00 m/s"),
-                        TextColor(Color::WHITE),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 22.,
-                            ..Default::default()
-                        },
-                    ));
-                });
         });
 }
 
 pub fn update_engine_ui(
     engine_state: Res<State<EngineState>>,
     mut engine_ui_query: Query<&mut BackgroundColor, With<EngineUI>>,
-    mut text_query: Query<&mut Text, With<HoverModeText>>,
+    mut text_query: Query<&mut Text, With<EngineText>>,
 ) {
     for mut text in text_query.iter_mut() {
         if *engine_state.get() == EngineState::On {
@@ -794,50 +436,6 @@ pub fn update_target_y_text(
     for ctl_y in drone_query.iter() {
         for mut text in text_query.iter_mut() {
             *text = format!("Target Y: {:.2} m", ctl_y.target_y).into();
-        }
-    }
-}
-
-pub fn update_output_z_text(
-    drone_query: Query<&Velocity, With<Drone>>,
-    mut text_query: Query<&mut Text, With<OutputZText>>,
-) {
-    for vel in drone_query.iter() {
-        for mut text in text_query.iter_mut() {
-            *text = format!("Output Z: {:.2} m/s", vel.linvel.z).into();
-        }
-    }
-}
-
-pub fn update_target_z_text(
-    drone_query: Query<&CruiseZPid, With<Drone>>,
-    mut text_query: Query<&mut Text, With<TargetZText>>,
-) {
-    for ctl_z in drone_query.iter() {
-        for mut text in text_query.iter_mut() {
-            *text = format!("Target Z: {:.2} m/s", ctl_z.target_v).into();
-        }
-    }
-}
-
-pub fn update_output_x_text(
-    drone_query: Query<&Velocity, With<Drone>>,
-    mut text_query: Query<&mut Text, With<OutputXText>>,
-) {
-    for vel in drone_query.iter() {
-        for mut text in text_query.iter_mut() {
-            *text = format!("Output X: {:.2} m/s", vel.linvel.x).into();
-        }
-    }
-}
-
-pub fn update_target_x_text(
-    drone_query: Query<&CruiseXPid, With<Drone>>,
-    mut text_query: Query<&mut Text, With<TargetXText>>,
-) {
-    for ctl_x in drone_query.iter() {
-        for mut text in text_query.iter_mut() {
-            *text = format!("Target X: {:.2} m/s", ctl_x.target_v).into();
         }
     }
 }

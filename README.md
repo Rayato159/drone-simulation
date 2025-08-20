@@ -11,17 +11,17 @@ We assume **vertical axis is Y**, and we ignore air resistance for simplicity.
 **Equation of Motion**
 
 $$
-v = \frac{dy}{dt}
+\Sigma F = m \cdot a
 $$
 
-**So,**
+**In y direction:**
 
 $$
-\int_{t_0}^{t} v dt = \int_{y_0}^{y} dy
+\Sigma F_y = T - m \cdot g = m \cdot a
 $$
 
 $$
-y(t) = y_0 + vt
+T = m \cdot (g + a)
 $$
 
 ## 🎯 PID Controller:
@@ -54,8 +54,4 @@ You can override the system by pressing:
 - `P` → Toggle Start Engine on/off
 - `Space` → Increase Altitude (go up)
 - `Left Ctrl` → Decrease Altitude (go down)
-- `W` → Move Forward
-- `S` → Move Backward
-- `A` → Move Left
-- `D` → Move Right
 - `Esc` → Exit the simulation
