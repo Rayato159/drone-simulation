@@ -16,12 +16,16 @@ pub struct DroneCamera;
 #[derive(Component)]
 pub struct HoverPid {
     pub kp: f32,
+    pub min_kp: f32,
+    pub max_kp: f32,
     pub ki: f32,
     pub kd: f32,
     pub prev_e: f32,
     pub integral_e: f32,
     pub v_limit: f32,
     pub target_y: f32,
+    pub min_y: f32,
+    pub max_y: f32,
 }
 
 #[derive(Component)]
@@ -121,13 +125,17 @@ pub fn spawn_drone(
         LockedAxes::ROTATION_LOCKED,
         Velocity::zero(),
         HoverPid {
-            kp: 0.6,
+            kp: 3.0,
+            min_kp: 0.6,
+            max_kp: 6.0,
             ki: 0.23,
             kd: 1.09,
             prev_e: 0.0,
             integral_e: 0.0,
             v_limit: 6.0,
             target_y: 0.0,
+            min_y: 0.0,
+            max_y: 120.0,
         },
     ));
 }
@@ -147,6 +155,9 @@ pub fn hover(
 
         // Integral error
         ctl.integral_e += e * dt;
+
+        let norm_y = (y / ctl.max_y).clamp(0.0, 1.0);
+        ctl.kp = ctl.min_kp + (ctl.max_kp - ctl.min_kp) * norm_y;
 
         // PID fully computed
         let mut v_out = (ctl.kp * e) + (ctl.ki * ctl.integral_e) + (ctl.kd * (e - ctl.prev_e) / dt);
@@ -173,7 +184,7 @@ pub fn manual_thrust_input(
             if delay.timer.just_finished() {
                 if *hover_state.get() == HoverState::On {
                     ctl.target_y += 1.0;
-                    ctl.target_y = ctl.target_y.min(120.0); // Prevent exceeding a maximum height
+                    ctl.target_y = ctl.target_y.min(ctl.max_y); // Prevent exceeding a maximum height
                 }
             }
         }
@@ -184,7 +195,7 @@ pub fn manual_thrust_input(
             if delay.timer.just_finished() {
                 if *hover_state.get() == HoverState::On {
                     ctl.target_y -= 1.0;
-                    ctl.target_y = ctl.target_y.max(10.0); // Prevent going below ground level
+                    ctl.target_y = ctl.target_y.max(ctl.min_y); // Prevent going below ground level
                 }
             }
         }
@@ -197,7 +208,7 @@ pub fn manual_thrust_input(
             } else {
                 next_hover_state.set(HoverState::On);
 
-                ctl.target_y = 10.0; // Default target height when engine is on
+                ctl.target_y = ctl.min_y; // Default target height when engine is on
             }
         }
 
