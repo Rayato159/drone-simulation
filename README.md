@@ -1,6 +1,6 @@
 # 🚀 Drone's Altitude Control using PID Simulation
 
-![Drone Simulation](./simulation_demo.gif)
+![Drone Simulation](./simulation.gif)
 
 This project is a simple simulation of vertical drone control using **PID controller** written in **Rust + Bevy**. The drone attempts to maintain or reach a target altitude by controlling its thrust in real-time.
 
@@ -54,4 +54,5 @@ You can override the system by pressing:
 - `P` → Toggle Start Engine on/off
 - `Space` → Increase Altitude (go up)
 - `Left Ctrl` → Decrease Altitude (go down)
+- `R` → Reset Target Altitude to 0 (Only works when engine is off)
 - `Esc` → Exit the simulation
