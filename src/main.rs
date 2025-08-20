@@ -91,6 +91,7 @@ fn main() {
             ),
         )
         .add_systems(Update, hover.run_if(in_state(EngineState::On)))
+        .add_systems(OnExit(EngineState::On), engine_off)
         .run();
 }
 
@@ -216,18 +217,26 @@ pub fn manual_control(
         if keyboard.just_pressed(KeyCode::KeyP) {
             if *engine_state.get() == EngineState::On {
                 next_engine_state.set(EngineState::Off);
-
-                ctl_y.target_y = 0.0;
             } else {
                 next_engine_state.set(EngineState::On);
-
-                ctl_y.target_y = ctl_y.min_y; // Default target height when engine is on
             }
         }
 
         if keyboard.just_pressed(KeyCode::Escape) {
             // Exit the application
             std::process::exit(0);
+        }
+    }
+}
+
+pub fn engine_off(
+    mut drone_query: Query<(&mut ExternalForce, &mut HoverPid), With<Drone>>,
+    engine_state: Res<State<EngineState>>,
+) {
+    for (mut force, mut ctl) in drone_query.iter_mut() {
+        if *engine_state.get() == EngineState::Off {
+            force.force = Vec3::ZERO; // Stop the drone when engine is off
+            ctl.target_y = 0.0; // Reset target height
         }
     }
 }
