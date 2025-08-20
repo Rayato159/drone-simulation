@@ -5,7 +5,6 @@ const FOLLOW_DIST: f32 = 14.0;
 const FOLLOW_HEIGHT: f32 = 6.0;
 const LOOK_AHEAD: f32 = 8.0;
 const SMOOTHNESS: f32 = 6.0;
-const SAFETY_FACTOR: f32 = 0.8;
 
 #[derive(Component)]
 pub struct Drone;
@@ -169,11 +168,14 @@ pub fn spawn_drone(
             Drone,
             Mesh3d(meshes.add(Cuboid::new(1.0, 0.5, 1.0))),
             MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-            RigidBody::Dynamic,
             Transform::from_xyz(0.0, 3.0, 0.0),
+            RigidBody::Dynamic,
             Collider::cuboid(1.0 / 2.0, 0.5 / 2.0, 1.0 / 2.0),
             GravityScale(1.0),
             LockedAxes::ROTATION_LOCKED,
+            ExternalForce::default(),
+            ColliderMassProperties::Density(1.0),
+            ReadMassProperties::default(),
             Velocity::zero(),
         ))
         .insert(HoverPid {
@@ -215,31 +217,39 @@ pub fn spawn_drone(
 
 pub fn hover(
     time: Res<Time>,
-    mut drone_query: Query<(&Transform, &mut Velocity, &mut HoverPid), With<Drone>>,
+    mut drone_query: Query<
+        (
+            &Transform,
+            &mut ExternalForce,
+            &mut HoverPid,
+            &ReadMassProperties,
+        ),
+        With<Drone>,
+    >,
 ) {
     let dt = time.delta_secs();
 
-    for (tf, mut vel, mut ctl_y) in drone_query.iter_mut() {
+    for (tf, mut force, mut ctl_y, m) in drone_query.iter_mut() {
         // y_0
         let y = tf.translation.y;
 
-        // Error
+        // PID error
         let e = ctl_y.target_y - y;
-
-        // Integral error
         ctl_y.integral_e += e * dt;
 
         let norm_y = (y / ctl_y.max_y).clamp(0.0, 1.0);
         ctl_y.kp = ctl_y.min_kp + (ctl_y.max_kp - ctl_y.min_kp) * norm_y;
 
-        // PID fully computed
-        let mut v_out =
+        let a_out =
             (ctl_y.kp * e) + (ctl_y.ki * ctl_y.integral_e) + (ctl_y.kd * (e - ctl_y.prev_e) / dt);
-        v_out = v_out.clamp(-ctl_y.v_limit, ctl_y.v_limit);
-
-        // Update variables
-        vel.linvel.y = vel.linvel.y + v_out * SAFETY_FACTOR;
         ctl_y.prev_e = e;
+
+        // Total desired vertical acceleration
+        let total_a = a_out + 9.81;
+
+        let force_y = m.mass * total_a;
+
+        force.force = Vec3::new(0.0, force_y, 0.0);
     }
 }
 
