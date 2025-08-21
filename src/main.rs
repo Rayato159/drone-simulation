@@ -395,15 +395,12 @@ pub fn pitch_roll_yaw(
     }
 }
 
+#[inline]
 fn angle_error(target: f32, current: f32) -> f32 {
-    let mut diff = target - current;
-    while diff > PI {
-        diff -= 2.0 * PI;
-    }
-    while diff < -PI {
-        diff += 2.0 * PI;
-    }
-    diff
+    let angle = target - current;
+
+    let y = (angle + PI).rem_euclid(2.0 * PI) - PI;
+    if y == -PI { PI } else { y }
 }
 
 pub fn manual_control(
