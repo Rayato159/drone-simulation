@@ -43,11 +43,11 @@ $$
 $$
 
 $$
-I = moment of inertia
+I = moment \space of \space inertia
 $$
 
 $$
-\alpha = angular acceleration
+\alpha = angular \space acceleration
 $$
 
 **Pitch (X axis):**
