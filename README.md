@@ -1,4 +1,4 @@
-# 🚀 Drone's Altitude Control using PID Simulation
+# 🚀 Drone Simulation
 
 ![Drone Simulation](./simulation.gif)
 
