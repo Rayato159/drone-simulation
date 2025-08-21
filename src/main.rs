@@ -183,7 +183,7 @@ fn main() {
         )
         .add_systems(
             Update,
-            (hover, pitch_roll_yaw).run_if(in_state(EngineState::On)),
+            update_drone_forces.run_if(in_state(EngineState::On)),
         )
         .add_systems(OnExit(EngineState::On), engine_off)
         .run();
@@ -277,51 +277,13 @@ pub fn spawn_drone(
         });
 }
 
-pub fn hover(
+pub fn update_drone_forces(
     time: Res<Time>,
     mut drone_query: Query<
         (
             &Transform,
             &mut ExternalForce,
             &mut HoverPid,
-            &ReadMassProperties,
-        ),
-        With<Drone>,
-    >,
-) {
-    let dt = time.delta_secs();
-
-    for (tf, mut force, mut ctl_y, m) in drone_query.iter_mut() {
-        // y_0
-        let y = tf.translation.y;
-
-        // PID error
-        let e = ctl_y.target_y - y;
-        ctl_y.integral_e += e * dt;
-
-        let norm_y = (y / ctl_y.max_y).clamp(0.0, 1.0);
-        ctl_y.kp = ctl_y.min_kp + (ctl_y.max_kp - ctl_y.min_kp) * norm_y;
-
-        // Calculate PID output
-        let a_out =
-            (ctl_y.kp * e) + (ctl_y.ki * ctl_y.integral_e) + (ctl_y.kd * (e - ctl_y.prev_e) / dt);
-
-        // Update error
-        ctl_y.prev_e = e;
-
-        // Total desired vertical acceleration
-        let force_y = m.mass * (a_out + GRAVITY);
-
-        force.force = tf.up() * force_y;
-    }
-}
-
-pub fn pitch_roll_yaw(
-    time: Res<Time>,
-    mut drone_query: Query<
-        (
-            &Transform,
-            &mut ExternalForce,
             &mut PitchPid,
             &mut RollPid,
             &mut YawPid,
@@ -332,65 +294,49 @@ pub fn pitch_roll_yaw(
 ) {
     let dt = time.delta_secs();
 
-    for (tf, mut force, mut ctl_pitch, mut ctl_roll, mut ctl_yaw, mass_props) in
+    for (tf, mut force, mut ctl_y, mut ctl_pitch, mut ctl_roll, mut ctl_yaw, mass_props) in
         drone_query.iter_mut()
     {
-        let (y_rad, x_rad, z_rad) = tf.rotation.to_euler(EulerRot::YXZ);
+        // === Hover (Y) ===
+        let y = tf.translation.y;
+        let e_y = ctl_y.target_y - y;
+        ctl_y.integral_e += e_y * dt;
+        let norm_y = (y / ctl_y.max_y).clamp(0.0, 1.0);
+        ctl_y.kp = ctl_y.min_kp + (ctl_y.max_kp - ctl_y.min_kp) * norm_y;
+        let a_y =
+            ctl_y.kp * e_y + ctl_y.ki * ctl_y.integral_e + ctl_y.kd * (e_y - ctl_y.prev_e) / dt;
+        ctl_y.prev_e = e_y;
+        let thrust_total = mass_props.mass * (a_y + GRAVITY);
 
-        // === Pitch X Axis ===
-        let e_x = ctl_pitch.target_angle - x_rad;
+        // === Orientation
+        let (yaw, pitch, roll) = tf.rotation.to_euler(EulerRot::YXZ);
 
-        ctl_pitch.integral_e += e_x * dt;
+        let e_pitch = angle_error(ctl_pitch.target_angle, pitch);
+        ctl_pitch.integral_e += e_pitch * dt;
+        let alpha_pitch = ctl_pitch.kp * e_pitch
+            + ctl_pitch.ki * ctl_pitch.integral_e
+            + ctl_pitch.kd * (e_pitch - ctl_pitch.prev_e) / dt;
+        ctl_pitch.prev_e = e_pitch;
+        let torque_x = mass_props.principal_inertia.x * alpha_pitch;
 
-        let norm_angle_x = (x_rad.abs() / ctl_pitch.max_angle).clamp(0.0, 1.0);
+        let e_roll = angle_error(ctl_roll.target_angle, roll);
+        ctl_roll.integral_e += e_roll * dt;
+        let alpha_roll = ctl_roll.kp * e_roll
+            + ctl_roll.ki * ctl_roll.integral_e
+            + ctl_roll.kd * (e_roll - ctl_roll.prev_e) / dt;
+        ctl_roll.prev_e = e_roll;
+        let torque_z = mass_props.principal_inertia.z * alpha_roll;
 
-        ctl_pitch.kp = ctl_pitch.min_kp + (ctl_pitch.max_kp - ctl_pitch.min_kp) * norm_angle_x;
+        let e_yaw = angle_error(ctl_yaw.target_angle, yaw);
+        ctl_yaw.integral_e += e_yaw * dt;
+        let alpha_yaw = ctl_yaw.kp * e_yaw
+            + ctl_yaw.ki * ctl_yaw.integral_e
+            + ctl_yaw.kd * (e_yaw - ctl_yaw.prev_e) / dt;
+        ctl_yaw.prev_e = e_yaw;
+        let torque_y = mass_props.principal_inertia.y * alpha_yaw;
 
-        let alpha_x = (ctl_pitch.kp * e_x)
-            + (ctl_pitch.ki * ctl_pitch.integral_e)
-            + (ctl_pitch.kd * (e_x - ctl_pitch.prev_e) / dt);
-
-        ctl_pitch.prev_e = e_x;
-
-        let torque_x = mass_props.principal_inertia.x * alpha_x;
-
-        // === Pitch Z Axis ===
-        let e_z = ctl_roll.target_angle - z_rad;
-
-        ctl_roll.integral_e += e_z * dt;
-
-        let norm_angle_z = (z_rad.abs() / ctl_roll.max_angle).clamp(0.0, 1.0);
-
-        ctl_roll.kp = ctl_roll.min_kp + (ctl_roll.max_kp - ctl_roll.min_kp) * norm_angle_z;
-
-        let alpha_z = (ctl_roll.kp * e_z)
-            + (ctl_roll.ki * ctl_roll.integral_e)
-            + (ctl_roll.kd * (e_z - ctl_roll.prev_e) / dt);
-
-        ctl_roll.prev_e = e_z;
-
-        let torque_z = mass_props.principal_inertia.z * alpha_z;
-
-        // === Yaw Axis ===
-        if ctl_yaw.target_angle > ctl_yaw.max_angle {
-            ctl_yaw.target_angle = 0.0;
-        } else if ctl_yaw.target_angle < ctl_yaw.min_angle {
-            ctl_yaw.target_angle = 0.0;
-        }
-
-        let e_y = angle_error(ctl_yaw.target_angle, y_rad);
-
-        ctl_yaw.integral_e += e_y * dt;
-
-        let alpha_y = (ctl_yaw.kp * e_y)
-            + (ctl_yaw.ki * ctl_yaw.integral_e)
-            + (ctl_yaw.kd * (e_y - ctl_yaw.prev_e) / dt);
-
-        ctl_yaw.prev_e = e_y;
-
-        let torque_y = mass_props.principal_inertia.y * alpha_y;
-
-        // Apply all torques together
+        // === Apply Total Force + Torque ===
+        force.force = tf.up() * thrust_total;
         force.torque = Vec3::new(torque_x, torque_y, torque_z);
     }
 }
