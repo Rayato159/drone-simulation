@@ -299,13 +299,17 @@ pub fn update_drone_forces(
     {
         // === Hover (Y) ===
         let y = tf.translation.y;
+
         let e_y = ctl_y.target_y - y;
         ctl_y.integral_e += e_y * dt;
+
         let norm_y = (y / ctl_y.max_y).clamp(0.0, 1.0);
         ctl_y.kp = ctl_y.min_kp + (ctl_y.max_kp - ctl_y.min_kp) * norm_y;
+
         let a_y =
             ctl_y.kp * e_y + ctl_y.ki * ctl_y.integral_e + ctl_y.kd * (e_y - ctl_y.prev_e) / dt;
         ctl_y.prev_e = e_y;
+
         let thrust_total = mass_props.mass * (a_y + GRAVITY);
 
         // === Orientation
@@ -313,26 +317,34 @@ pub fn update_drone_forces(
 
         let e_pitch = angle_error(ctl_pitch.target_angle, pitch);
         ctl_pitch.integral_e += e_pitch * dt;
+
         let alpha_pitch = ctl_pitch.kp * e_pitch
             + ctl_pitch.ki * ctl_pitch.integral_e
             + ctl_pitch.kd * (e_pitch - ctl_pitch.prev_e) / dt;
+
         ctl_pitch.prev_e = e_pitch;
+
         let torque_x = mass_props.principal_inertia.x * alpha_pitch;
 
         let e_roll = angle_error(ctl_roll.target_angle, roll);
         ctl_roll.integral_e += e_roll * dt;
+
         let alpha_roll = ctl_roll.kp * e_roll
             + ctl_roll.ki * ctl_roll.integral_e
             + ctl_roll.kd * (e_roll - ctl_roll.prev_e) / dt;
         ctl_roll.prev_e = e_roll;
+
         let torque_z = mass_props.principal_inertia.z * alpha_roll;
 
         let e_yaw = angle_error(ctl_yaw.target_angle, yaw);
+
         ctl_yaw.integral_e += e_yaw * dt;
+
         let alpha_yaw = ctl_yaw.kp * e_yaw
             + ctl_yaw.ki * ctl_yaw.integral_e
             + ctl_yaw.kd * (e_yaw - ctl_yaw.prev_e) / dt;
         ctl_yaw.prev_e = e_yaw;
+
         let torque_y = mass_props.principal_inertia.y * alpha_yaw;
 
         // === Apply Total Force + Torque ===
