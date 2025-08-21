@@ -1,10 +1,11 @@
-use bevy::{prelude::*, window::WindowMode};
+use std::f32::consts::PI;
+
+use bevy::{input::mouse::MouseMotion, prelude::*, window::WindowMode};
 use bevy_rapier3d::prelude::*;
 
-const FOLLOW_DIST: f32 = 14.0;
-const FOLLOW_HEIGHT: f32 = 6.0;
-const LOOK_AHEAD: f32 = 8.0;
-const SMOOTHNESS: f32 = 6.0;
+const FOLLOW_DIST: f32 = 15.0;
+const FOLLOW_PITCH: f32 = 10.0;
+const SENSITIVITY: f32 = 0.005;
 const GRAVITY: f32 = 9.81;
 
 #[derive(Component)]
@@ -22,10 +23,55 @@ pub struct HoverPid {
     pub kd: f32,
     pub prev_e: f32,
     pub integral_e: f32,
-    pub v_limit: f32,
     pub target_y: f32,
+    pub v_rate: f32,
     pub min_y: f32,
     pub max_y: f32,
+}
+
+#[derive(Component)]
+pub struct PitchPid {
+    pub kp: f32,
+    pub min_kp: f32,
+    pub max_kp: f32,
+    pub ki: f32,
+    pub kd: f32,
+    pub prev_e: f32,
+    pub integral_e: f32,
+    pub target_angle: f32,
+    pub angle_rate: f32,
+    pub min_angle: f32,
+    pub max_angle: f32,
+}
+
+#[derive(Component)]
+pub struct RollPid {
+    pub kp: f32,
+    pub min_kp: f32,
+    pub max_kp: f32,
+    pub ki: f32,
+    pub kd: f32,
+    pub prev_e: f32,
+    pub integral_e: f32,
+    pub target_angle: f32,
+    pub angle_rate: f32,
+    pub min_angle: f32,
+    pub max_angle: f32,
+}
+
+#[derive(Component)]
+pub struct YawPid {
+    pub kp: f32,
+    pub min_kp: f32,
+    pub max_kp: f32,
+    pub ki: f32,
+    pub kd: f32,
+    pub prev_e: f32,
+    pub integral_e: f32,
+    pub target_angle: f32,
+    pub angle_rate: f32,
+    pub min_angle: f32,
+    pub max_angle: f32,
 }
 
 #[derive(Component)]
@@ -33,6 +79,24 @@ pub struct OutputYText;
 
 #[derive(Component)]
 pub struct TargetYText;
+
+#[derive(Component)]
+pub struct OutputPitchText;
+
+#[derive(Component)]
+pub struct TargetPitchText;
+
+#[derive(Component)]
+pub struct OutputRollText;
+
+#[derive(Component)]
+pub struct TargetRollText;
+
+#[derive(Component)]
+pub struct OutputYawText;
+
+#[derive(Component)]
+pub struct TargetYawText;
 
 #[derive(Component)]
 pub struct EngineText;
@@ -60,6 +124,25 @@ impl Delay {
     }
 }
 
+#[derive(Resource)]
+pub struct DroneCameraParams {
+    pub yaw: f32,
+    pub pitch: f32,
+    pub radius: f32,
+    pub sensitivity: f32,
+}
+
+impl Default for DroneCameraParams {
+    fn default() -> Self {
+        Self {
+            yaw: 0.0,
+            pitch: FOLLOW_PITCH.to_radians(),
+            radius: FOLLOW_DIST,
+            sensitivity: SENSITIVITY,
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -74,6 +157,7 @@ fn main() {
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .insert_resource(Delay::new(0.05))
+        .insert_resource(DroneCameraParams::default())
         .init_state::<EngineState>()
         .add_systems(Startup, spawn_floor)
         .add_systems(Startup, spawn_drone)
@@ -84,13 +168,23 @@ fn main() {
             Update,
             (
                 manual_control,
+                control_camera_mouse,
                 update_engine_ui,
                 update_output_y_text,
                 update_target_y_text,
+                update_output_pitch_text,
+                update_target_pitch_text,
+                update_output_roll_text,
+                update_target_roll_text,
+                update_output_yaw_text,
+                update_target_yaw_text,
                 update_camera_pos,
             ),
         )
-        .add_systems(Update, hover.run_if(in_state(EngineState::On)))
+        .add_systems(
+            Update,
+            (hover, pitch_roll_yaw).run_if(in_state(EngineState::On)),
+        )
         .add_systems(OnExit(EngineState::On), engine_off)
         .run();
 }
@@ -102,12 +196,12 @@ pub fn spawn_floor(
 ) {
     commands
         .spawn((
-            Mesh3d(meshes.add(Cuboid::new(100., 0.1, 100.))),
+            Mesh3d(meshes.add(Cuboid::new(500., 0.1, 500.))),
             MeshMaterial3d(materials.add(Color::WHITE)),
             Transform::from_xyz(0.0, 0.0, 0.0),
         ))
         .insert(RigidBody::Fixed)
-        .insert(Collider::cuboid(100. / 2., 0.1 / 2.0, 100. / 2.));
+        .insert(Collider::cuboid(500. / 2., 0.1 / 2.0, 500. / 2.));
 }
 
 pub fn spawn_drone(
@@ -124,7 +218,6 @@ pub fn spawn_drone(
             RigidBody::Dynamic,
             Collider::cuboid(1.0 / 2.0, 0.5 / 2.0, 1.0 / 2.0),
             GravityScale(1.0),
-            LockedAxes::ROTATION_LOCKED,
             ExternalForce::default(),
             ColliderMassProperties::Density(1.0),
             ReadMassProperties::default(),
@@ -138,10 +231,49 @@ pub fn spawn_drone(
             kd: 1.09,
             prev_e: 0.0,
             integral_e: 0.0,
-            v_limit: 6.0,
             target_y: 0.0,
+            v_rate: 2.0,
             min_y: 0.0,
             max_y: 120.0,
+        })
+        .insert(PitchPid {
+            kp: 5.0,
+            min_kp: 2.0,
+            max_kp: 6.0,
+            ki: 0.1,
+            kd: 1.2,
+            prev_e: 0.0,
+            integral_e: 0.0,
+            target_angle: 0.0 * PI / 180.0,
+            angle_rate: 5.0 * PI / 180.0,
+            min_angle: -30.0 * PI / 180.0,
+            max_angle: 30.0 * PI / 180.0,
+        })
+        .insert(RollPid {
+            kp: 5.0,
+            min_kp: 2.0,
+            max_kp: 6.0,
+            ki: 0.1,
+            kd: 1.2,
+            prev_e: 0.0,
+            integral_e: 0.0,
+            target_angle: 0.0 * PI / 180.0,
+            angle_rate: 5.0 * PI / 180.0,
+            min_angle: -30.0 * PI / 180.0,
+            max_angle: 30.0 * PI / 180.0,
+        })
+        .insert(YawPid {
+            kp: 5.0,
+            min_kp: 2.0,
+            max_kp: 6.0,
+            ki: 0.1,
+            kd: 1.2,
+            prev_e: 0.0,
+            integral_e: 0.0,
+            target_angle: 0.0 * PI / 180.0,
+            angle_rate: 5.0 * PI / 180.0,
+            min_angle: -PI * 2.0,
+            max_angle: PI * 2.0,
         });
 }
 
@@ -170,6 +302,7 @@ pub fn hover(
         let norm_y = (y / ctl_y.max_y).clamp(0.0, 1.0);
         ctl_y.kp = ctl_y.min_kp + (ctl_y.max_kp - ctl_y.min_kp) * norm_y;
 
+        // Calculate PID output
         let a_out =
             (ctl_y.kp * e) + (ctl_y.ki * ctl_y.integral_e) + (ctl_y.kd * (e - ctl_y.prev_e) / dt);
 
@@ -179,41 +312,109 @@ pub fn hover(
         // Total desired vertical acceleration
         let force_y = m.mass * (a_out + GRAVITY);
 
-        force.force = Vec3::new(0.0, force_y, 0.0);
+        force.force = tf.up() * force_y;
     }
+}
+
+pub fn pitch_roll_yaw(
+    time: Res<Time>,
+    mut drone_query: Query<
+        (
+            &Transform,
+            &mut ExternalForce,
+            &mut PitchPid,
+            &mut RollPid,
+            &mut YawPid,
+            &ReadMassProperties,
+        ),
+        With<Drone>,
+    >,
+) {
+    let dt = time.delta_secs();
+
+    for (tf, mut force, mut ctl_pitch, mut ctl_roll, mut ctl_yaw, mass_props) in
+        drone_query.iter_mut()
+    {
+        let (y_rad, x_rad, z_rad) = tf.rotation.to_euler(EulerRot::YXZ);
+
+        // === Pitch X Axis ===
+        let e_x = ctl_pitch.target_angle - x_rad;
+
+        ctl_pitch.integral_e += e_x * dt;
+
+        let norm_angle_x = (x_rad.abs() / ctl_pitch.max_angle).clamp(0.0, 1.0);
+
+        ctl_pitch.kp = ctl_pitch.min_kp + (ctl_pitch.max_kp - ctl_pitch.min_kp) * norm_angle_x;
+
+        let alpha_x = (ctl_pitch.kp * e_x)
+            + (ctl_pitch.ki * ctl_pitch.integral_e)
+            + (ctl_pitch.kd * (e_x - ctl_pitch.prev_e) / dt);
+
+        ctl_pitch.prev_e = e_x;
+
+        let torque_x = mass_props.principal_inertia.x * alpha_x;
+
+        // === Pitch Z Axis ===
+        let e_z = ctl_roll.target_angle - z_rad;
+
+        ctl_roll.integral_e += e_z * dt;
+
+        let norm_angle_z = (z_rad.abs() / ctl_roll.max_angle).clamp(0.0, 1.0);
+
+        ctl_roll.kp = ctl_roll.min_kp + (ctl_roll.max_kp - ctl_roll.min_kp) * norm_angle_z;
+
+        let alpha_z = (ctl_roll.kp * e_z)
+            + (ctl_roll.ki * ctl_roll.integral_e)
+            + (ctl_roll.kd * (e_z - ctl_roll.prev_e) / dt);
+
+        ctl_roll.prev_e = e_z;
+
+        let torque_z = mass_props.principal_inertia.z * alpha_z;
+
+        // === Yaw Axis ===
+        if ctl_yaw.target_angle > ctl_yaw.max_angle {
+            ctl_yaw.target_angle = 0.0;
+        } else if ctl_yaw.target_angle < ctl_yaw.min_angle {
+            ctl_yaw.target_angle = 0.0;
+        }
+
+        let e_y = angle_error(ctl_yaw.target_angle, y_rad);
+
+        ctl_yaw.integral_e += e_y * dt;
+
+        let alpha_y = (ctl_yaw.kp * e_y)
+            + (ctl_yaw.ki * ctl_yaw.integral_e)
+            + (ctl_yaw.kd * (e_y - ctl_yaw.prev_e) / dt);
+
+        ctl_yaw.prev_e = e_y;
+
+        let torque_y = mass_props.principal_inertia.y * alpha_y;
+
+        // Apply all torques together
+        force.torque = Vec3::new(torque_x, torque_y, torque_z);
+    }
+}
+
+fn angle_error(target: f32, current: f32) -> f32 {
+    let mut diff = target - current;
+    while diff > PI {
+        diff -= 2.0 * PI;
+    }
+    while diff < -PI {
+        diff += 2.0 * PI;
+    }
+    diff
 }
 
 pub fn manual_control(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut drone_query: Query<&mut HoverPid, With<Drone>>,
+    mut drone_query: Query<(&mut HoverPid, &mut PitchPid, &mut RollPid, &mut YawPid), With<Drone>>,
     mut next_engine_state: ResMut<NextState<EngineState>>,
     engine_state: Res<State<EngineState>>,
     mut delay: ResMut<Delay>,
     time: Res<Time>,
 ) {
-    for mut ctl_y in drone_query.iter_mut() {
-        if keyboard.pressed(KeyCode::Space) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    ctl_y.target_y += 1.0;
-                    ctl_y.target_y = ctl_y.target_y.min(ctl_y.max_y); // Prevent exceeding a maximum height
-                }
-            }
-        }
-
-        if keyboard.pressed(KeyCode::ControlLeft) {
-            delay.timer.tick(time.delta());
-
-            if delay.timer.just_finished() {
-                if *engine_state.get() == EngineState::On {
-                    ctl_y.target_y -= 1.0;
-                    ctl_y.target_y = ctl_y.target_y.max(ctl_y.min_y); // Prevent going below ground level
-                }
-            }
-        }
-
+    for (mut ctl_y, mut ctl_pitch, mut ctl_roll, mut ctl_yaw) in drone_query.iter_mut() {
         if keyboard.just_pressed(KeyCode::KeyP) {
             if *engine_state.get() == EngineState::On {
                 next_engine_state.set(EngineState::Off);
@@ -222,9 +423,108 @@ pub fn manual_control(
             }
         }
 
+        if keyboard.pressed(KeyCode::Space) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_y.target_y += ctl_y.v_rate;
+                    ctl_y.target_y = ctl_y.target_y.min(ctl_y.max_y); // Prevent exceeding a maximum height
+                }
+            }
+        }
+        if keyboard.pressed(KeyCode::ControlLeft) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_y.target_y -= ctl_y.v_rate;
+                    ctl_y.target_y = ctl_y.target_y.max(ctl_y.min_y); // Prevent going below ground level
+                }
+            }
+        }
+
+        if keyboard.pressed(KeyCode::KeyW) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_pitch.target_angle -= ctl_pitch.angle_rate;
+                    ctl_pitch.target_angle = ctl_pitch.target_angle.max(ctl_pitch.min_angle);
+                }
+            }
+        }
+        if keyboard.just_released(KeyCode::KeyW) {
+            ctl_pitch.target_angle = 0.0;
+        }
+
+        if keyboard.pressed(KeyCode::KeyS) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_pitch.target_angle += ctl_pitch.angle_rate;
+                    ctl_pitch.target_angle = ctl_pitch.target_angle.min(ctl_pitch.max_angle);
+                }
+            }
+        }
+        if keyboard.just_released(KeyCode::KeyS) {
+            ctl_pitch.target_angle = 0.0;
+        }
+
+        if keyboard.pressed(KeyCode::KeyD) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_roll.target_angle -= ctl_roll.angle_rate;
+                    ctl_roll.target_angle = ctl_roll.target_angle.max(ctl_roll.min_angle);
+                }
+            }
+        }
+        if keyboard.just_released(KeyCode::KeyD) {
+            ctl_roll.target_angle = 0.0;
+        }
+
+        if keyboard.pressed(KeyCode::KeyA) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_roll.target_angle += ctl_roll.angle_rate;
+                    ctl_roll.target_angle = ctl_roll.target_angle.min(ctl_roll.max_angle);
+                }
+            }
+        }
+        if keyboard.just_released(KeyCode::KeyA) {
+            ctl_roll.target_angle = 0.0;
+        }
+
+        if keyboard.pressed(KeyCode::KeyQ) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_yaw.target_angle -= ctl_yaw.angle_rate;
+                }
+            }
+        }
+
+        if keyboard.pressed(KeyCode::KeyE) {
+            delay.timer.tick(time.delta());
+
+            if delay.timer.just_finished() {
+                if *engine_state.get() == EngineState::On {
+                    ctl_yaw.target_angle += ctl_yaw.angle_rate;
+                }
+            }
+        }
+
         if keyboard.just_pressed(KeyCode::KeyR) {
             if *engine_state.get() == EngineState::Off {
                 ctl_y.target_y = 0.0;
+                ctl_pitch.target_angle = 0.0;
+                ctl_roll.target_angle = 0.0;
             }
         }
 
@@ -255,21 +555,65 @@ pub fn spawn_camera(mut commands: Commands) {
 }
 
 pub fn update_camera_pos(
-    time: Res<Time>,
+    drone_cam_params: Res<DroneCameraParams>,
+    rapier_context: ReadRapierContext,
     drone_query: Query<&Transform, (With<Drone>, Without<DroneCamera>)>,
     mut cam_query: Query<&mut Transform, (With<DroneCamera>, Without<Drone>)>,
 ) {
     for mut cam_trans in cam_query.iter_mut() {
         for drone_trans in drone_query.iter() {
-            let fwd = drone_trans.forward();
+            let Ok(context) = rapier_context.single() else {
+                continue;
+            };
 
-            let desired = drone_trans.translation - fwd * FOLLOW_DIST + Vec3::Y * FOLLOW_HEIGHT;
+            let yaw = drone_cam_params.yaw;
+            let pitch = drone_cam_params.pitch;
+            let radius = drone_cam_params.radius;
 
-            let alpha = 1.0 - (-SMOOTHNESS * time.delta_secs()).exp();
-            cam_trans.translation = cam_trans.translation.lerp(desired, alpha);
+            let x = radius * yaw.sin() * pitch.cos();
+            let y = radius * pitch.sin();
+            let z = radius * yaw.cos() * pitch.cos();
 
-            let target = drone_trans.translation + fwd * LOOK_AHEAD;
-            cam_trans.look_at(target, Vec3::Y);
+            let offset = Vec3::new(x, y, z);
+
+            let drone_view_pos = drone_trans.translation + Vec3::Y;
+
+            let ideal_camera_pos = drone_view_pos + offset;
+            let dir = (ideal_camera_pos - drone_view_pos).normalize();
+            let max_dist = offset.length();
+            let mut final_dist = max_dist;
+
+            if let Some((_entity, toi)) = context.cast_ray(
+                drone_view_pos,
+                dir,
+                max_dist,
+                true,
+                QueryFilter::default().exclude_sensors(),
+            ) {
+                final_dist = toi - 0.1;
+            }
+
+            let actual_camera_pos = drone_view_pos + dir * final_dist;
+            cam_trans.translation = actual_camera_pos;
+            cam_trans.look_at(drone_view_pos, Vec3::Y);
+        }
+    }
+}
+
+pub fn control_camera_mouse(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    mut mouse_events: EventReader<MouseMotion>,
+    mut cam_params: ResMut<DroneCameraParams>,
+) {
+    if mouse_input.pressed(MouseButton::Right) {
+        for event in mouse_events.read() {
+            cam_params.yaw -= event.delta.x * cam_params.sensitivity;
+            cam_params.pitch -= event.delta.y * cam_params.sensitivity;
+
+            // Limit pitch so it doesn’t flip
+            cam_params.pitch = cam_params
+                .pitch
+                .clamp(-40_f32.to_radians(), 89_f32.to_radians());
         }
     }
 }
@@ -294,7 +638,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .spawn((
                     EngineUI,
                     Node {
-                        width: Val::Px(320.),
+                        width: Val::Px(420.),
                         display: Display::Flex,
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
@@ -334,7 +678,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(320.),
+                        width: Val::Px(420.),
                         display: Display::Flex,
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
@@ -374,7 +718,7 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(320.),
+                        width: Val::Px(420.),
                         display: Display::Flex,
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
@@ -400,6 +744,246 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     parent.spawn((
                         TargetYText,
                         Text::new("Target Y: 0.00 m"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        OutputPitchText,
+                        Text::new("Output Pitch: 0.00 deg"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        TargetPitchText,
+                        Text::new("Target Pitch: 0.00 deg"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        OutputRollText,
+                        Text::new("Output Roll: 0.00 deg"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        TargetRollText,
+                        Text::new("Target Roll: 0.00 deg"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        OutputYawText,
+                        Text::new("Output Yaw: 0.00 deg"),
+                        TextColor(Color::WHITE),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.,
+                            ..Default::default()
+                        },
+                    ));
+                });
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(420.),
+                        display: Display::Flex,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        position_type: PositionType::Relative,
+                        padding: UiRect {
+                            left: Val::Px(8.),
+                            right: Val::Px(8.),
+                            top: Val::Px(8.),
+                            bottom: Val::Px(8.),
+                        },
+                        border: UiRect {
+                            left: Val::Px(2.),
+                            right: Val::Px(2.),
+                            top: Val::Px(2.),
+                            bottom: Val::Px(2.),
+                        },
+                        ..Default::default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BackgroundColor(Color::BLACK),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        TargetYawText,
+                        Text::new("Target Yaw: 0.00 deg"),
                         TextColor(Color::WHITE),
                         TextLayout::new_with_justify(JustifyText::Left),
                         TextFont {
@@ -450,6 +1034,79 @@ pub fn update_target_y_text(
     for ctl_y in drone_query.iter() {
         for mut text in text_query.iter_mut() {
             *text = format!("Target Y: {:.2} m", ctl_y.target_y).into();
+        }
+    }
+}
+
+pub fn update_output_pitch_text(
+    drone_query: Query<&Transform, With<Drone>>,
+    mut text_query: Query<&mut Text, With<OutputPitchText>>,
+) {
+    for tf in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            let (_, x_rad, _) = tf.rotation.to_euler(EulerRot::YXZ);
+            *text = format!("Output Pitch: {:.2} deg", x_rad.to_degrees()).into();
+        }
+    }
+}
+
+pub fn update_target_pitch_text(
+    drone_query: Query<&PitchPid, With<Drone>>,
+    mut text_query: Query<&mut Text, With<TargetPitchText>>,
+) {
+    for ctl_pitch in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            *text = format!(
+                "Target Pitch: {:.2} deg",
+                ctl_pitch.target_angle.to_degrees()
+            )
+            .into();
+        }
+    }
+}
+
+pub fn update_output_roll_text(
+    drone_query: Query<&Transform, With<Drone>>,
+    mut text_query: Query<&mut Text, With<OutputRollText>>,
+) {
+    for tf in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            let (_, _, z_rad) = tf.rotation.to_euler(EulerRot::YXZ);
+            *text = format!("Output Roll: {:.2} deg", z_rad.to_degrees()).into();
+        }
+    }
+}
+
+pub fn update_target_roll_text(
+    drone_query: Query<&RollPid, With<Drone>>,
+    mut text_query: Query<&mut Text, With<TargetRollText>>,
+) {
+    for roll in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            *text = format!("Target Roll: {:.2} deg", roll.target_angle.to_degrees()).into();
+        }
+    }
+}
+
+pub fn update_output_yaw_text(
+    drone_query: Query<&Transform, With<Drone>>,
+    mut text_query: Query<&mut Text, With<OutputYawText>>,
+) {
+    for tf in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            let (y_rad, _, _) = tf.rotation.to_euler(EulerRot::YXZ);
+            *text = format!("Output Yaw: {:.2} deg", y_rad.to_degrees()).into();
+        }
+    }
+}
+
+pub fn update_target_yaw_text(
+    drone_query: Query<&YawPid, With<Drone>>,
+    mut text_query: Query<&mut Text, With<TargetYawText>>,
+) {
+    for yaw in drone_query.iter() {
+        for mut text in text_query.iter_mut() {
+            *text = format!("Target Yaw: {:.2} deg", yaw.target_angle.to_degrees()).into();
         }
     }
 }
