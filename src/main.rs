@@ -638,9 +638,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .spawn((
                     EngineUI,
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -678,9 +678,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -718,9 +718,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -758,9 +758,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -798,9 +798,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -838,9 +838,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -878,9 +878,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -918,9 +918,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
@@ -958,9 +958,9 @@ pub fn spawn_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(420.),
+                        width: Val::Px(380.),
                         display: Display::Flex,
-                        justify_content: JustifyContent::Center,
+                        justify_content: JustifyContent::Start,
                         align_items: AlignItems::Center,
                         position_type: PositionType::Relative,
                         padding: UiRect {
