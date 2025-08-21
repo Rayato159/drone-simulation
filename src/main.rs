@@ -525,6 +525,7 @@ pub fn manual_control(
                 ctl_y.target_y = 0.0;
                 ctl_pitch.target_angle = 0.0;
                 ctl_roll.target_angle = 0.0;
+                ctl_yaw.target_angle = 0.0;
             }
         }
 
