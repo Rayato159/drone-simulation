@@ -6,22 +6,66 @@ This project is a simple simulation of vertical drone control using **PID contro
 
 ## 📐 Mathematical Model
 
-We assume **vertical axis is Y**, and we ignore air resistance for simplicity.
+In Bevy: **vertical axis is Y**, and we ignore air resistance for simplicity.
+
+### 🚁 Translational Motion (Vertical)
 
 **Equation of Motion**
 
 $$
-\Sigma F = m \cdot a
+\sum F = m \cdot a
 $$
 
-**In y direction:**
+**In Y direction:**
 
 $$
-\Sigma F_y = T - m \cdot g = m \cdot a
+\sum F_y = T - m \cdot g = m \cdot a_y
+$$
+
+**Therefore,**
+
+$$
+T = m \cdot (g + a_y)
+$$
+
+### 🔁 Rotational Motion (Pitch, Roll, Yaw)
+
+**We use Newton's second law for rotation:**
+
+$$
+\sum \tau = I \cdot \alpha
+$$
+
+**Where:**
+
+$$
+\tau = torque
 $$
 
 $$
-T = m \cdot (g + a)
+I = moment of inertia
+$$
+
+$$
+\alpha = angular acceleration
+$$
+
+**Pitch (X axis):**
+
+$$
+\tau_x = I_x \cdot \alpha_x
+$$
+
+**Roll (Z axis):**
+
+$$
+\tau_z = I_z \cdot \alpha_z
+$$
+
+**Yaw (Y axis):**
+
+$$
+\tau_y = I_y \cdot \alpha_y
 $$
 
 ## 🎯 PID Controller:
