@@ -54,5 +54,11 @@ You can override the system by pressing:
 - `P` → Toggle Start Engine on/off
 - `Space` → Increase Altitude (go up)
 - `Left Ctrl` → Decrease Altitude (go down)
+- `W` → Pitch Down (tilt forward)
+- `S` → Pitch Up (tilt backward)
+- `A` → Roll Left (tilt left)
+- `D` → Roll Right (tilt right)
+- `Q` → Yaw Left (rotate left)
+- `E` → Yaw Right (rotate right)
 - `R` → Reset Target Altitude to 0 (Only works when engine is off)
 - `Esc` → Exit the simulation
