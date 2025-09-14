@@ -281,10 +281,10 @@ pub fn spawn_drone(
         .id();
 
     let prop_positions = [
-        Vec3::new(-0.71, 0.0, -0.71), // front-left
-        Vec3::new(0.71, 0.0, -0.71),  // front-right
-        Vec3::new(-0.71, 0.0, 0.71),  // back-left
-        Vec3::new(0.71, 0.0, 0.71),   // back-right
+        Vec3::new(-0.5, 0.0, -0.5), // front-left
+        Vec3::new(0.5, 0.0, -0.5),  // front-right
+        Vec3::new(-0.5, 0.0, 0.5),  // back-left
+        Vec3::new(0.5, 0.0, 0.5),   // back-right
     ];
 
     for (i, offset) in prop_positions.iter().enumerate() {
@@ -294,11 +294,12 @@ pub fn spawn_drone(
 
         commands.spawn((
             Propeller(i),
-            Mesh3d(meshes.add(Cylinder::new(0.05, 0.01))),
+            Mesh3d(meshes.add(Cylinder::new(0.2, 0.01))),
             MeshMaterial3d(materials.add(Color::srgb_u8(200, 200, 200))),
             Transform::from_translation(Vec3::new(offset.x, 3.0, offset.z)),
             RigidBody::Dynamic,
-            Collider::cylinder(0.05, 0.01),
+            Collider::cylinder(0.01 / 2.0, 0.2),
+            ColliderMassProperties::Density(0.001),
             ImpulseJoint::new(drone_entity, joint),
         ));
     }
@@ -318,7 +319,6 @@ pub fn update_drone_forces(
         ),
         With<Drone>,
     >,
-    prop_query: Query<&Propeller, With<Propeller>>,
 ) {
     let dt = time.delta_secs();
 
@@ -372,26 +372,7 @@ pub fn update_drone_forces(
 
         let torque_y = mass_props.principal_inertia.y * alpha_yaw;
 
-        // === Accumulate total force + torque from all props ===
-        let mut total_force = Vec3::ZERO;
-
-        let base = thrust_hover / 4.0;
-
-        for prop in prop_query.iter() {
-            let thrust = match prop.0 {
-                0 => base - alpha_roll + alpha_pitch - alpha_yaw, // FL
-                1 => base + alpha_roll + alpha_pitch + alpha_yaw, // FR
-                2 => base - alpha_roll - alpha_pitch + alpha_yaw, // BL
-                3 => base + alpha_roll - alpha_pitch - alpha_yaw, // BR
-                _ => base,
-            };
-
-            let f = tf.up() * thrust;
-
-            total_force += f;
-        }
-
-        ext_force.force = total_force;
+        ext_force.force = *tf.up() * thrust_hover;
         ext_force.torque = Vec3::new(torque_x, torque_y, torque_z);
     }
 }
